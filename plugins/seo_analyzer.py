@@ -1,69 +1,115 @@
-# plugins/seo_analyzer.py
+# plugins/seo_analyzer.py (V2 - 三合一增强版)
 
-# 导入我们需要的库
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import re
+import requests
+import os
+import json
 
-# 1. 初始化FastAPI应用
-# 我们给它起个标题和版本号，这会显示在自动生成的API文档中
+# --- 初始化与配置 ---
 app = FastAPI(
-    title="SEO Analyzer Plugin",
-    description="一个简单的工具，用于分析文本中关键词的密度。",
-    version="1.0.0",
+    title="Multi-Tool Content Agent Plugin",
+    description="一个为内容创作助手提供多种能力的API服务。",
+    version="2.0.0",
 )
 
-# 2. 定义输入数据的格式
-# 使用Pydantic的BaseModel可以确保输入的数据类型正确
+# 从环境变量中获取 Serper API Key
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")
+
+# --- 数据模型定义 ---
+
+# SEO 分析工具的模型
 class SeoAnalysisRequest(BaseModel):
     text: str
     keywords: list[str]
-    # 添加一个示例，方便在API文档中查看
-    class Config:
-        schema_extra = {
-            "example": {
-                "text": "Python is a great programming language. I love programming in Python because Python is versatile.",
-                "keywords": ["python", "programming"]
-            }
-        }
 
-# 3. 定义输出数据的格式
 class SeoAnalysisResponse(BaseModel):
     word_count: int
     keyword_density: dict[str, float]
 
+# 网页搜索工具的模型
+class WebSearchRequest(BaseModel):
+    query: str
 
-# 4. 创建API端点 (Endpoint)
-# @app.post("/analyze") 告诉FastAPI:
-# - 这是一个处理POST请求的函数
-# - 它的访问路径是 /analyze
+class WebSearchResponse(BaseModel):
+    search_results: list[dict]
+
+# 模拟发布工具的模型
+class PublishRequest(BaseModel):
+    title: str
+    content: str
+
+class PublishResponse(BaseModel):
+    status: str
+    mock_url: str
+
+# --- API 端点实现 ---
+
+# 端点 1: SEO 分析 (已完成)
 @app.post("/analyze", response_model=SeoAnalysisResponse, tags=["Analysis"])
 def analyze_seo_keywords(request: SeoAnalysisRequest):
-    """
-    分析文本，计算总词数和每个关键词的词频密度。
-    - **text**: 需要被分析的文章全文。
-    - **keywords**: 一个包含关键词字符串的列表。
-    """
+    # ... (这部分代码保持不变) ...
     text_lower = request.text.lower()
-    # 使用正则表达式来分词，效果比简单的 split() 更好
     words = re.findall(r'\b\w+\b', text_lower)
     word_count = len(words)
-
     density = {}
     if word_count > 0:
         for keyword in request.keywords:
             keyword_lower = keyword.lower()
-            # 计算关键词在词语列表中出现的次数
             count = words.count(keyword_lower)
-            # 计算密度百分比，并保留4位小数
             density[keyword] = round((count / word_count) * 100, 4)
-
     return SeoAnalysisResponse(word_count=word_count, keyword_density=density)
 
-# 5. 添加一个根路径，用于快速检查服务是否存活
+# 端点 2: 【新增】网页搜索
+@app.post("/search", response_model=WebSearchResponse, tags=["Search"])
+def web_search(request: WebSearchRequest):
+    """
+    根据查询词，调用 Serper API 进行实时网页搜索。
+    """
+    if not SERPER_API_KEY:
+        raise HTTPException(status_code=500, detail="SERPER_API_KEY 未配置")
+    
+    url = "https://google.serper.dev/search"
+    payload = json.dumps({"q": request.query})
+    headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+    
+    try:
+        response = requests.post(url, headers=headers, data=payload, timeout=10)
+        response.raise_for_status()
+        results = response.json()
+        
+        # 我们只提取前3个结果的关键信息，避免信息过载
+        simplified_results = []
+        for item in results.get("organic", [])[:3]:
+            simplified_results.append({
+                "title": item.get("title"),
+                "link": item.get("link"),
+                "snippet": item.get("snippet"),
+            })
+        
+        return WebSearchResponse(search_results=simplified_results)
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"调用搜索API失败: {e}")
+
+# 端点 3: 【新增】模拟发布
+@app.post("/publish", response_model=PublishResponse, tags=["Publish"])
+def mock_publish(request: PublishRequest):
+    """
+    模拟将文章发布到一个博客平台。
+    """
+    print("--- [模拟发布] ---")
+    print(f"标题: {request.title}")
+    print(f"内容: {request.content[:100]}...")
+    print("--- [发布成功] ---")
+    
+    # 返回一个虚构的成功信息和URL
+    return PublishResponse(
+        status="success",
+        mock_url=f"https://my-fake-blog.com/posts/{request.title.replace(' ', '-').lower()}"
+    )
+
+# 根路径
 @app.get("/", tags=["Health Check"])
 def read_root():
-    """
-    一个简单的健康检查端点。
-    """
-    return {"status": "ok", "message": "SEO Analyzer Plugin is running!"}
+    return {"status": "ok", "message": "Multi-Tool Content Agent Plugin is running!"}

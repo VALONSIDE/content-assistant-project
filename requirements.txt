@@ -1,3 +1,7 @@
 fastapi
 uvicorn[standard]  # [standard]会包含一些推荐的优化库
 pydantic
+openai
+python-dotenv
+requests
+jinja2
